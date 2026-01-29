@@ -4,21 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Technical Assessment - Augmenza</title>
-    <link rel="stylesheet" href="{{ url_for('static', registry='style.css') }}">
     <style>
-        .test-container { max-width: 800px; margin: 40px auto; padding: 20px; font-family: sans-serif; }
-        .question-card { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 5px solid #007bff; }
-        .options-list { list-style: none; padding: 0; }
-        .option-item { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; }
-        .option-item:hover { background: #eef; }
-        .submit-btn { background: #28a745; color: white; padding: 15px 30px; border: none; border-radius: 5px; font-size: 18px; cursor: pointer; display: block; width: 100%; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; line-height: 1.6; }
+        .test-container { max-width: 850px; margin: 40px auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #007bff; text-align: center; margin-bottom: 10px; }
+        .instruction { text-align: center; color: #666; margin-bottom: 30px; font-style: italic; }
+        .question-card { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #e1e4e8; border-left: 6px solid #007bff; transition: transform 0.2s; }
+        .question-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
+        .options-list { margin-top: 15px; }
+        .option-item { display: block; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+        .option-item:hover { background: #f0f7ff; border-color: #007bff; }
+        .option-item input { margin-right: 12px; transform: scale(1.2); }
+        .submit-btn { background: #28a745; color: white; padding: 18px; border: none; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; display: block; width: 100%; margin-top: 40px; transition: background 0.3s; }
+        .submit-btn:hover { background: #218838; }
     </style>
 </head>
 <body>
 
     <div class="test-container">
         <h2>Technical Assessment</h2>
-        <p>Please answer all 30 questions. Do not refresh the page.</p>
+        <p class="instruction">Total Questions: 30. Please select the most appropriate answer for each.</p>
         <hr>
 
         <form action="{{ url_for('submit_test') }}" method="POST">
@@ -28,7 +33,7 @@
                 
                 <div class="options-list">
                     {% for j in range(questions[i].options|length) %}
-                    <label class="option-item" style="display: block;">
+                    <label class="option-item">
                         <input type="radio" name="q{{ i }}" value="{{ j }}" required>
                         {{ questions[i].options[j] }}
                     </label>
@@ -39,7 +44,7 @@
             </div>
             {% endfor %}
 
-            <button type="submit" class="submit-btn">Submit Assessment</button>
+            <button type="submit" class="submit-btn">Finish & Submit Results</button>
         </form>
     </div>
 
