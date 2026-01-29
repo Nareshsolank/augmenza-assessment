@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Results - Augmenza Career</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        .answer-card { border-radius: 10px; margin-bottom: 20px; border-left: 8px solid; }
+        .is-correct { border-left-color: #28a745; background-color: #f8fff9; }
+        .is-wrong { border-left-color: #dc3545; background-color: #fff8f8; }
+        .correct-text { color: #28a745; font-weight: bold; }
+        .wrong-text { color: #dc3545; text-decoration: line-through; }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container mt-5 mb-5">
+        <div class="text-center card shadow p-4 mb-4">
+            <h1 class="text-primary">Assessment Complete!</h1>
+            <p class="lead">Thanks for giving this assessment. Your marks are:</p>
+            <div class="display-4">{{ score }} / 30</div>
+            <h2 class="text-muted">Percentage: {{ percentage }}%</h2>
+        </div>
+
+        <h4 class="mb-3">Detailed Review:</h4>
+        {% for q in questions %}
+            {% set user_choice = user_answers[loop.index0]|int %}
+            <div class="card p-3 answer-card {% if user_choice == q.a %}is-correct{% else %}is-wrong{% endif %} shadow-sm">
+                <p class="fw-bold">Q{{ loop.index }}: {{ q.q }}</p>
+                <ul class="list-unstyled">
+                    {% for opt in q.options %}
+                        <li class="p-1">
+                            {% if loop.index0 == q.a %}
+                                <span class="correct-text">✓ {{ opt }} (Correct Answer)</span>
+                            {% elif loop.index0 == user_choice %}
+                                <span class="wrong-text">✗ {{ opt }} (Your Selection)</span>
+                            {% else %}
+                                {{ opt }}
+                            {% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endfor %}
+        
+        <div class="text-center">
+            <a href="/" class="btn btn-secondary">Exit to Welcome Page</a>
+        </div>
+    </div>
+</body>
+</html>
