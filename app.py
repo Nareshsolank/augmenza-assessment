@@ -76,15 +76,15 @@ def test_page():
     
     MODEL_ID = "models/gemini-2.5-flash" 
     
+    # Prompt updated to be more concise to avoid JSON truncation
     prompt = f"""
     Generate exactly 30 technical MCQs for a {post} role with {exp} years of experience.
-    Focus ONLY on these skills/languages: {', '.join(skills)}.
+    Focus ONLY on these skills: {', '.join(skills)}.
     
     Format: A JSON list of objects.
-    Each object must have:
-    "q": "the question",
-    "options": ["opt0", "opt1", "opt2", "opt3"],
-    "a": 0 (index of correct answer)
+    KEEP QUESTIONS AND OPTIONS SHORT.
+    Each object:
+    {{"q": "the question", "options": ["opt0", "opt1", "opt2", "opt3"], "a": 0}}
     """
 
     try:
@@ -101,37 +101,37 @@ def test_page():
             text_response = text_response.split("```")[1].split("```")[0].strip()
 
         questions = json.loads(text_response)
-        session['questions'] = questions 
+        # WE REMOVED: session['questions'] = questions
         return render_template('test.html', questions=questions)
     
     except Exception as e:
-        return f"Assessment Generation Error: {e}. Try again in a moment."
+        return f"Error: {e}. Try refreshing the page."
 
 @app.route('/submit_test', methods=['POST'])
 def submit_test():
-    questions = session.get('questions', [])
-    user_answers = []
     score = 0
+    total_questions = 30
     
-    for i in range(len(questions)):
+    for i in range(total_questions):
         selected = request.form.get(f'q{i}')
-        correct = str(questions[i]['a'])
-        user_answers.append(selected)
+        # We now get the correct answer from a hidden field in the form
+        correct = request.form.get(f'correct_{i}')
+        
         if selected == correct:
             score += 1
             
-    percentage = round((score / 30) * 100, 2)
+    percentage = round((score / total_questions) * 100, 2)
     
+    # Save to CSV
     with open(CSV_FILE, 'a', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
             session.get('name'), session.get('phone'), session.get('email'), 
             session.get('post_applied'), ", ".join(session.get('selected_skills', [])), 
-            f"{score}/30", f"{percentage}%", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            f"{score}/{total_questions}", f"{percentage}%", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         ])
     
-    return render_template('result.html', score=score, percentage=percentage, 
-                           questions=questions, user_answers=user_answers)
+    return render_template('result.html', score=score, percentage=percentage)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
