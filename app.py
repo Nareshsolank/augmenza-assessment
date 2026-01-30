@@ -74,7 +74,7 @@ def test_page():
     exp = session.get('experience')
     skills = session.get('selected_skills', [])
     
-    MODEL_ID = "models/gemini-2.5-flash" 
+    MODEL_ID = "models/gemini-2.5-flash-lite" 
     
     # Prompt updated to be more concise to avoid JSON truncation
     prompt = f"""
