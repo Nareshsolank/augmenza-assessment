@@ -18,11 +18,11 @@ app.secret_key = os.getenv("FLASK_SECRET", "Naresh_solanki")
 API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY)
 
-# --- MySQL Configuration ---
+# --- MySQL Configuration using Railway Private Variables ---
 def get_db_connection():
     try:
         return pymysql.connect(
-            # Railway provides these via the Variables tab
+            # Using Railway internal variables for private networking
             host=os.getenv("MYSQLHOST"), 
             user=os.getenv("MYSQLUSER"),
             password=os.getenv("MYSQLPASSWORD"),
@@ -38,6 +38,9 @@ def init_db():
     print("\n--- [START] Database Initialization ---")
     try:
         conn = get_db_connection()
+        if conn is None:
+             raise Exception("Connection returned None")
+             
         print("✅ MySQL Connection Successful!")
         cursor = conn.cursor()
         cursor.execute("""
@@ -60,7 +63,8 @@ def init_db():
         print("--- [FINISH] Database Initialization ---\n")
     except Exception as e:
         print(f"\n❌ DATABASE ERROR: {e}")
-        sys.exit(1)
+        # On Railway, don't sys.exit(1) or the worker will enter a crash loop
+        # Instead, let the app start so you can see logs
 
 init_db()
 
@@ -105,7 +109,6 @@ def get_ai_questions():
     exp = session.get('experience')
     skills = session.get('selected_skills', [])
     
-    # Using your preferred model
     MODEL_ID = "gemini-2.5-flash-lite" 
     
     prompt = (
@@ -116,7 +119,7 @@ def get_ai_questions():
     )
 
     try:
-        # Increase token limit to 8192 to prevent cutting off the 30 questions
+        # Increase token limit to 8192 and force JSON response format
         response = client.models.generate_content(
             model=MODEL_ID, 
             contents=prompt,
@@ -194,19 +197,20 @@ def submit_test():
     
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
-        query = """
-            INSERT INTO assessment_results 
-            (name, phone, email, post_applied, skills, score, percentage, test_date) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        values = (session.get('name'), session.get('phone'), session.get('email'), 
-                  session.get('post_applied'), ", ".join(session.get('selected_skills', [])),
-                  f"{score}/{total_questions}", percentage, datetime.datetime.now())
-        cursor.execute(query, values)
-        conn.commit()
-        cursor.close()
-        conn.close()
+        if conn:
+            cursor = conn.cursor()
+            query = """
+                INSERT INTO assessment_results 
+                (name, phone, email, post_applied, skills, score, percentage, test_date) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            values = (session.get('name'), session.get('phone'), session.get('email'), 
+                      session.get('post_applied'), ", ".join(session.get('selected_skills', [])),
+                      f"{score}/{total_questions}", percentage, datetime.datetime.now())
+            cursor.execute(query, values)
+            conn.commit()
+            cursor.close()
+            conn.close()
     except Exception as e:
         print(f"❌ Database Insertion Error: {e}")
 
@@ -214,4 +218,6 @@ def submit_test():
     return render_template('result.html', score=score, total=total_questions, percentage=percentage, results=detailed_results)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Railway sets the PORT environment variable
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
