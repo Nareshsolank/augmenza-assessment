@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Instructions - Augmenza</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .instruction-card { max-width: 700px; margin: 50px auto; border-radius: 15px; border: none; }
+        #loading-section { display: flex; flex-direction: column; align-items: center; margin-top: 20px; }
+        .hidden { display: none; }
+        .instruction-list li { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card shadow instruction-card p-5">
+        <h2 class="text-primary text-center mb-4">Final Instructions</h2>
+        
+        <div class="alert alert-info shadow-sm">
+            <ul class="instruction-list">
+                <li>Total Questions: <strong>30</strong></li>
+                <li>Format: <strong>Multiple Choice (Single Correct)</strong></li>
+                <li><strong>Proctoring:</strong> Do not change tabs or minimize the window. </li>
+                <li><strong>No Refresh:</strong> Refreshing the page will terminate your session.</li>
+                <li>The test is dynamically generated based on your specific experience level.</li>
+            </ul>
+        </div>
+
+        <div id="loading-section">
+            <div class="spinner-border text-primary mb-3" role="status" id="spinner" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p id="status-text" class="fw-bold text-secondary text-center">
+                Generating your personalized assessment... <br>
+                <small class="text-muted">(This usually takes 20-40 seconds)</small>
+            </p>
+        </div>
+
+        <form action="/start_test" method="POST" id="test-form" class="hidden text-center mt-4">
+            <input type="hidden" name="questions_data" id="questions_data">
+            <div class="alert alert-success py-2">✅ Test is ready! Click below to begin.</div>
+            <button type="submit" class="btn btn-primary btn-lg px-5 shadow-sm">Start Test Now</button>
+        </form>
+
+        <div id="error-section" class="hidden text-center mt-3">
+            <div class="alert alert-danger">
+                <p class="mb-2" id="error-message"></p>
+                <button onclick="window.location.reload()" class="btn btn-danger btn-sm">Retry Generation</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    window.onload = function() {
+        const statusText = document.getElementById('status-text');
+        const spinner = document.getElementById('spinner');
+        const testForm = document.getElementById('test-form');
+        const questionsInput = document.getElementById('questions_data');
+        const errorSection = document.getElementById('error-section');
+        const errorMsg = document.getElementById('error-message');
+        const loadingSection = document.getElementById('loading-section');
+
+        function fetchQuestions(attemptsLeft = 2) {
+            // Fetching the AI generated questions
+            fetch('/get_ai_questions')
+                .then(response => {
+                    if (!response.ok) {
+                        if (response.status === 429) throw new Error("AI Quota limit reached. Please wait a moment.");
+                        throw new Error("Could not reach the AI server.");
+                    }
+                    // We get the raw text (JSON string) to avoid re-serialization issues
+                    return response.text(); 
+                })
+                .then(data => {
+                    // Quick validation to see if we got an empty response
+                    if (data.trim().length < 10) {
+                        throw new Error("Received empty data from AI.");
+                    }
+
+                    // Success: Inject the raw string directly into the hidden input
+                    questionsInput.value = data;
+                    
+                    // Toggle UI
+                    loadingSection.classList.add('hidden');
+                    testForm.classList.remove('hidden');
+                })
+                .catch(err => {
+                    console.error("Attempt failed:", err);
+                    if (attemptsLeft > 0) {
+                        statusText.innerHTML = `AI is taking a moment... retrying (${attemptsLeft} left)`;
+                        setTimeout(() => fetchQuestions(attemptsLeft - 1), 3000);
+                    } else {
+                        loadingSection.classList.add('hidden');
+                        errorSection.classList.remove('hidden');
+                        errorMsg.innerText = err.message || "An unexpected error occurred.";
+                    }
+                });
+        }
+
+        // Kick off the generation process
+        fetchQuestions();
+    };
+</script>
+
+</body>
+</html>

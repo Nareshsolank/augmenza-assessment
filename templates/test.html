@@ -5,48 +5,83 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Technical Assessment - Augmenza</title>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; line-height: 1.6; }
-        .test-container { max-width: 850px; margin: 40px auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        h2 { color: #007bff; text-align: center; margin-bottom: 10px; }
-        .instruction { text-align: center; color: #666; margin-bottom: 30px; font-style: italic; }
-        .question-card { background: #fff; padding: 20px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #e1e4e8; border-left: 6px solid #007bff; transition: transform 0.2s; }
-        .question-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.05); }
-        .options-list { margin-top: 15px; }
-        .option-item { display: block; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f6; color: #333; margin: 0; }
+        #timer-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #dc3545; color: white; padding: 10px 20px; border-radius: 30px; font-size: 20px; font-weight: bold; z-index: 1000; }
+        .test-container { max-width: 850px; margin: 80px auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .question-card { padding: 20px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #e1e4e8; border-left: 6px solid #007bff; }
+        .option-item { display: block; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; transition: 0.2s; }
         .option-item:hover { background: #f0f7ff; border-color: #007bff; }
-        .option-item input { margin-right: 12px; transform: scale(1.2); }
-        .submit-btn { background: #28a745; color: white; padding: 18px; border: none; border-radius: 8px; font-size: 20px; font-weight: bold; cursor: pointer; display: block; width: 100%; margin-top: 40px; transition: background 0.3s; }
-        .submit-btn:hover { background: #218838; }
+        .submit-btn { background: #007bff; color: white; padding: 15px; border: none; border-radius: 8px; font-size: 18px; width: 100%; cursor: pointer; transition: background 0.3s; }
+        .submit-btn:hover { background: #0056b3; }
+        /* Style for disabled state */
+        .submit-btn:disabled { background: #cccccc; cursor: not-allowed; }
     </style>
 </head>
 <body>
 
+    <div id="timer-container">Time Remaining: <span id="timer">15:00</span></div>
+
     <div class="test-container">
-        <h2>Technical Assessment</h2>
-        <p class="instruction">Total Questions: 30. Please select the most appropriate answer for each.</p>
+        <h2 style="text-align: center; color: #007bff;">Technical Assessment</h2>
+        <p style="text-align: center; font-style: italic;">Do not switch tabs. Assessment is monitored.</p>
         <hr>
 
-        <form action="{{ url_for('submit_test') }}" method="POST">
+        <form action="{{ url_for('submit_test') }}" method="POST" id="assessment-form">
             {% for i in range(questions|length) %}
             <div class="question-card">
                 <p><strong>Question {{ i + 1 }}:</strong> {{ questions[i].q }}</p>
                 
+                <input type="hidden" name="q_text_{{ i }}" value="{{ questions[i].q }}">
+                
                 <div class="options-list">
                     {% for j in range(questions[i].options|length) %}
                     <label class="option-item">
-                        <input type="radio" name="q{{ i }}" value="{{ j }}" required>
+                        <input type="radio" name="q{{ i }}" value="{{ j }}">
                         {{ questions[i].options[j] }}
+                        
+                        <input type="hidden" name="q{{ i }}_opt_text_{{ j }}" value="{{ questions[i].options[j] }}">
                     </label>
                     {% endfor %}
                 </div>
-
-                <input type="hidden" name="correct_{{ i }}" value="{{ questions[i].a }}">
             </div>
             {% endfor %}
 
-            <button type="submit" class="submit-btn">Finish & Submit Results</button>
+            <button type="submit" class="submit-btn" id="submit-button">Submit Assessment</button>
         </form>
     </div>
 
+    <script>
+    let timeLeft = 15 * 60;
+    let tabSwitchCount = 0;
+    const testForm = document.getElementById('assessment-form');
+    const submitBtn = document.getElementById('submit-button');
+
+    // Update 2: Form Submission Guard to prevent double clicks
+    testForm.addEventListener('submit', function() {
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Submitting Results...";
+    });
+
+    function updateTimer() {
+        const mins = Math.floor(timeLeft / 60);
+        const secs = timeLeft % 60;
+        document.getElementById('timer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        if (timeLeft <= 0) { testForm.submit(); }
+        timeLeft--;
+    }
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            tabSwitchCount++;
+            if (tabSwitchCount >= 3) { 
+                alert("Final Warning: Limit exceeded. Submitting test.");
+                testForm.submit(); 
+            }
+            else { alert(`Warning: No tab switching! (${tabSwitchCount}/3)`); }
+        }
+    });
+
+    setInterval(updateTimer, 1000);
+    </script>
 </body>
 </html>

@@ -1,39 +1,65 @@
 import os
 import json
-import csv
 import datetime
+import sys
+import pymysql
 from dotenv import load_dotenv
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from google import genai
 from google.genai import types
 
-# 1. LOAD ENVIRONMENT VARIABLES
+# Load environment variables from .env
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET", "augmenza_career_default_123")
+app.secret_key = os.getenv("FLASK_SECRET", "Naresh_solanki")
 
-# 2. CONFIGURE GEMINI
+# Gemini Setup
 API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=API_KEY)
 
-# 3. PERSISTENT STORAGE LOGIC
-if os.path.exists('/data'):
-    CSV_FILE = '/data/assessment_results.csv'
-else:
-    CSV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assessment_results.csv')
+# --- MySQL Configuration ---
+def get_db_connection():
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        user=os.getenv("MYSQL_USER", "root"),
+        password=os.getenv("MYSQL_PASSWORD", "Naresh_solanki"),
+        database=os.getenv("MYSQL_DB", "augmenza_career"),
+        cursorclass=pymysql.cursors.DictCursor
+    )
 
-def init_csv():
-    if not os.path.exists(CSV_FILE):
-        with open(CSV_FILE, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(["Name", "Contact", "Email", "Post", "Skills", "Score", "Percentage", "Date"])
+def init_db():
+    print("\n--- [START] Database Initialization ---")
+    try:
+        conn = get_db_connection()
+        print("✅ MySQL Connection Successful!")
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS assessment_results (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255),
+                phone VARCHAR(20),
+                email VARCHAR(255),
+                post_applied VARCHAR(100),
+                skills TEXT,
+                score VARCHAR(20),
+                percentage FLOAT,
+                test_date DATETIME
+            )
+        """)
+        conn.commit()
+        print("✅ Database Table is Ready!")
+        cursor.close()
+        conn.close()
+        print("--- [FINISH] Database Initialization ---\n")
+    except Exception as e:
+        print(f"\n❌ DATABASE ERROR: {e}")
+        sys.exit(1)
 
-# --- ROUTES ---
+init_db()
 
 @app.route('/')
 def index():
-    init_csv()
     return render_template('index.html')
 
 @app.route('/details')
@@ -50,7 +76,6 @@ def save_details():
 @app.route('/skills')
 def skills_page():
     posts = ["Developer", "QA Tester", "Devops", "Consultant", "Analyst", "HR Operation", "Talent Acquisition", "Client Acquisition", "Sales", "Marketing"]
-    
     categories = {
         "Languages": ["Python", "JavaScript", "Java", "C#", "C++", "PHP", "Go", "Swift", "Rust", "SQL"],
         "Backend": ["ASP.NET Core", "Django", "Express.js", "FastAPI", "Flask", "Go Lang", "Node.js", "Laravel (PHP)", "Spring Boot", "Ruby on Rails"],
@@ -64,75 +89,123 @@ def skills_page():
 @app.route('/generate_test', methods=['POST'])
 def generate_test():
     session['post_applied'] = request.form.get('post')
-    session['experience'] = request.form.get('experience')
+    session['experience'] = float(request.form.get('experience', 0))
     session['selected_skills'] = request.form.getlist('skills') 
-    return redirect(url_for('test_page'))
+    return render_template('instructions.html')
 
-@app.route('/test')
-def test_page():
+@app.route('/get_ai_questions')
+def get_ai_questions():
     post = session.get('post_applied')
     exp = session.get('experience')
     skills = session.get('selected_skills', [])
     
-    MODEL_ID = "models/gemini-2.5-flash-lite" 
+    # Using your preferred model
+    MODEL_ID = "gemini-2.5-flash-lite" 
     
-    # Prompt updated to be more concise to avoid JSON truncation
-    prompt = f"""
-    Generate exactly 30 technical MCQs for a {post} role with {exp} years of experience.
-    Focus ONLY on these skills: {', '.join(skills)}.
-    
-    Format: A JSON list of objects.
-    KEEP QUESTIONS AND OPTIONS SHORT.
-    Each object:
-    {{"q": "the question", "options": ["opt0", "opt1", "opt2", "opt3"], "a": 0}}
-    """
+    prompt = (
+        f"Generate exactly 30 technical MCQs for a {post} role with {exp} years of experience. "
+        f"Skills: {', '.join(skills)}. "
+        "Return ONLY a JSON list of objects. Each object must have: "
+        "\"q\" (string), \"options\" (list of 4 strings), and \"a\" (integer 0-3)."
+    )
 
     try:
+        # Increase token limit to 8192 to prevent cutting off the 30 questions
         response = client.models.generate_content(
-            model=MODEL_ID,
+            model=MODEL_ID, 
             contents=prompt,
-            config=types.GenerateContentConfig(temperature=0.2)
+            config=types.GenerateContentConfig(
+                max_output_tokens=8192,
+                response_mime_type="application/json"
+            )
         )
         
         text_response = response.text.strip()
-        if text_response.startswith("```json"):
-            text_response = text_response.split("```json")[1].split("```")[0].strip()
-        elif text_response.startswith("```"):
-            text_response = text_response.split("```")[1].split("```")[0].strip()
-
-        questions = json.loads(text_response)
-        # WE REMOVED: session['questions'] = questions
-        return render_template('test.html', questions=questions)
-    
+        
+        # Simple cleanup if markdown is present
+        if "```" in text_response:
+            text_response = text_response.split("```")[1].replace("json", "").strip()
+            
+        # Validate JSON before returning
+        json.loads(text_response)
+        
+        return text_response 
     except Exception as e:
-        return f"Error: {e}. Try refreshing the page."
+        print(f"AI Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/start_test', methods=['POST'])
+def start_test():
+    questions_json = request.form.get('questions_data')
+    if not questions_json:
+        return redirect(url_for('skills_page'))
+    
+    questions = json.loads(questions_json)
+    session['correct_answers'] = [q['a'] for q in questions]
+    return render_template('test.html', questions=questions)
 
 @app.route('/submit_test', methods=['POST'])
 def submit_test():
     score = 0
-    total_questions = 30
+    total_questions = 30 # Back to your required 30
+    detailed_results = []
+    ans_key = session.get('correct_answers', [])
     
     for i in range(total_questions):
-        selected = request.form.get(f'q{i}')
-        # We now get the correct answer from a hidden field in the form
-        correct = request.form.get(f'correct_{i}')
+        q_text = request.form.get(f'q_text_{i}')
+        selected_idx = request.form.get(f'q{i}') 
+        correct_idx = str(ans_key[i]) if i < len(ans_key) else None
         
-        if selected == correct:
+        options = [
+            request.form.get(f'q{i}_opt_text_0'),
+            request.form.get(f'q{i}_opt_text_1'),
+            request.form.get(f'q{i}_opt_text_2'),
+            request.form.get(f'q{i}_opt_text_3')
+        ]
+        
+        try:
+            user_ans_text = options[int(selected_idx)] if selected_idx is not None else "Not Answered"
+            corr_ans_text = options[int(correct_idx)] if correct_idx is not None else "Unknown"
+            is_correct = (str(selected_idx) == correct_idx)
+        except:
+            user_ans_text = "Not Answered"
+            corr_ans_text = "N/A"
+            is_correct = False
+
+        if is_correct: 
             score += 1
+            
+        detailed_results.append({
+            'num': i + 1,
+            'question': q_text,
+            'user_answer': user_ans_text,
+            'correct_answer': corr_ans_text,
+            'all_options': options,
+            'is_correct': is_correct
+        })
             
     percentage = round((score / total_questions) * 100, 2)
     
-    # Save to CSV
-    with open(CSV_FILE, 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            session.get('name'), session.get('phone'), session.get('email'), 
-            session.get('post_applied'), ", ".join(session.get('selected_skills', [])), 
-            f"{score}/{total_questions}", f"{percentage}%", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        ])
-    
-    return render_template('result.html', score=score, percentage=percentage)
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        query = """
+            INSERT INTO assessment_results 
+            (name, phone, email, post_applied, skills, score, percentage, test_date) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        values = (session.get('name'), session.get('phone'), session.get('email'), 
+                  session.get('post_applied'), ", ".join(session.get('selected_skills', [])),
+                  f"{score}/{total_questions}", percentage, datetime.datetime.now())
+        cursor.execute(query, values)
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"❌ Database Insertion Error: {e}")
+
+    session.pop('correct_answers', None)
+    return render_template('result.html', score=score, total=total_questions, percentage=percentage, results=detailed_results)
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=5000, debug=True)
