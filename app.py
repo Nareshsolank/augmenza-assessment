@@ -20,13 +20,19 @@ client = genai.Client(api_key=API_KEY)
 
 # --- MySQL Configuration ---
 def get_db_connection():
-    return pymysql.connect(
-        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
-        user=os.getenv("MYSQL_USER", "root"),
-        password=os.getenv("MYSQL_PASSWORD", "Naresh_solanki"),
-        database=os.getenv("MYSQL_DB", "augmenza_career"),
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    try:
+        return pymysql.connect(
+            # Railway provides these via the Variables tab
+            host=os.getenv("MYSQLHOST"), 
+            user=os.getenv("MYSQLUSER"),
+            password=os.getenv("MYSQLPASSWORD"),
+            database=os.getenv("MYSQLDATABASE"),
+            port=int(os.getenv("MYSQLPORT", 3306)),
+            cursorclass=pymysql.cursors.DictCursor
+        )
+    except Exception as e:
+        print(f"❌ Connection Error: {e}")
+        return None
 
 def init_db():
     print("\n--- [START] Database Initialization ---")
