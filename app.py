@@ -22,8 +22,7 @@ client = genai.Client(api_key=API_KEY)
 def get_db_connection():
     try:
         return pymysql.connect(
-            # Using Railway internal variables for private networking
-            host=os.getenv("MYSQLHOST"), 
+            host=os.getenv("MYSQLHOST"),
             user=os.getenv("MYSQLUSER"),
             password=os.getenv("MYSQLPASSWORD"),
             database=os.getenv("MYSQLDATABASE"),
@@ -63,13 +62,13 @@ def init_db():
         print("--- [FINISH] Database Initialization ---\n")
     except Exception as e:
         print(f"\n❌ DATABASE ERROR: {e}")
-        # On Railway, don't sys.exit(1) or the worker will enter a crash loop
-        # Instead, let the app start so you can see logs
 
 init_db()
 
 @app.route('/')
 def index():
+    # Clear the completion flag when starting a new session at the home page
+    session.pop('test_complete', None)
     return render_template('index.html')
 
 @app.route('/details')
@@ -100,7 +99,7 @@ def skills_page():
 def generate_test():
     session['post_applied'] = request.form.get('post')
     session['experience'] = float(request.form.get('experience', 0))
-    session['selected_skills'] = request.form.getlist('skills') 
+    session['selected_skills'] = request.form.getlist('skills')
     return render_template('instructions.html')
 
 @app.route('/get_ai_questions')
@@ -108,70 +107,77 @@ def get_ai_questions():
     post = session.get('post_applied')
     exp = session.get('experience')
     skills = session.get('selected_skills', [])
-    
-    MODEL_ID = "gemini-2.5-flash-lite" 
-    
+   
+    MODEL_ID = "gemini-2.5-flash-lite"
+   
     prompt = (
         f"Generate exactly 30 technical MCQs for a {post} role with {exp} years of experience. "
         f"Skills: {', '.join(skills)}. "
+        "Follow these MCQ quality rules: "
+        "1. Distractors: All 4 options must be similar in length and technical tone. "
+        "2. Logic: Wrong options should represent common technical misconceptions or related but incorrect functions/properties. "
+        "3. Difficulty: Ensure the distractors are challenging enough for the specified experience level. "
         "Return ONLY a JSON list of objects. Each object must have: "
         "\"q\" (string), \"options\" (list of 4 strings), and \"a\" (integer 0-3)."
     )
 
     try:
-        # Increase token limit to 8192 and force JSON response format
         response = client.models.generate_content(
-            model=MODEL_ID, 
+            model=MODEL_ID,
             contents=prompt,
             config=types.GenerateContentConfig(
                 max_output_tokens=8192,
                 response_mime_type="application/json"
             )
         )
-        
+       
         text_response = response.text.strip()
-        
-        # Simple cleanup if markdown is present
         if "```" in text_response:
             text_response = text_response.split("```")[1].replace("json", "").strip()
-            
-        # Validate JSON before returning
+           
         json.loads(text_response)
-        
-        return text_response 
+        return text_response
     except Exception as e:
         print(f"AI Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/start_test', methods=['POST'])
 def start_test():
+    # HISTORY/BACK/REFRESH PROTECTION: Check if already submitted
+    if session.get('test_complete'):
+        return redirect(url_for('index'))
+
     questions_json = request.form.get('questions_data')
     if not questions_json:
         return redirect(url_for('skills_page'))
-    
+   
     questions = json.loads(questions_json)
     session['correct_answers'] = [q['a'] for q in questions]
     return render_template('test.html', questions=questions)
 
 @app.route('/submit_test', methods=['POST'])
 def submit_test():
+    # REFRESH PROTECTION: If user refreshes the result page, send to home
+    if session.get('test_complete'):
+        return redirect(url_for('index'))
+
     score = 0
-    total_questions = 30 # Back to your required 30
+    total_questions = 30
     detailed_results = []
     ans_key = session.get('correct_answers', [])
-    
+   
     for i in range(total_questions):
         q_text = request.form.get(f'q_text_{i}')
-        selected_idx = request.form.get(f'q{i}') 
+        selected_idx = request.form.get(f'q{i}')
         correct_idx = str(ans_key[i]) if i < len(ans_key) else None
-        
+       
         options = [
             request.form.get(f'q{i}_opt_text_0'),
             request.form.get(f'q{i}_opt_text_1'),
             request.form.get(f'q{i}_opt_text_2'),
             request.form.get(f'q{i}_opt_text_3')
         ]
-        
+       
         try:
             user_ans_text = options[int(selected_idx)] if selected_idx is not None else "Not Answered"
             corr_ans_text = options[int(correct_idx)] if correct_idx is not None else "Unknown"
@@ -181,9 +187,9 @@ def submit_test():
             corr_ans_text = "N/A"
             is_correct = False
 
-        if is_correct: 
+        if is_correct:
             score += 1
-            
+           
         detailed_results.append({
             'num': i + 1,
             'question': q_text,
@@ -192,19 +198,19 @@ def submit_test():
             'all_options': options,
             'is_correct': is_correct
         })
-            
+           
     percentage = round((score / total_questions) * 100, 2)
-    
+   
     try:
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
             query = """
-                INSERT INTO assessment_results 
-                (name, phone, email, post_applied, skills, score, percentage, test_date) 
+                INSERT INTO assessment_results
+                (name, phone, email, post_applied, skills, score, percentage, test_date)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            values = (session.get('name'), session.get('phone'), session.get('email'), 
+            values = (session.get('name'), session.get('phone'), session.get('email'),
                       session.get('post_applied'), ", ".join(session.get('selected_skills', [])),
                       f"{score}/{total_questions}", percentage, datetime.datetime.now())
             cursor.execute(query, values)
@@ -214,10 +220,12 @@ def submit_test():
     except Exception as e:
         print(f"❌ Database Insertion Error: {e}")
 
+    # LOCK THE TEST: Set flag and cleanup
+    session['test_complete'] = True
     session.pop('correct_answers', None)
+    
     return render_template('result.html', score=score, total=total_questions, percentage=percentage, results=detailed_results)
 
 if __name__ == '__main__':
-    # Railway sets the PORT environment variable
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)

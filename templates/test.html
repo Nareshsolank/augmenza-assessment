@@ -5,25 +5,87 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Technical Assessment - Augmenza</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f7f6; color: #333; margin: 0; }
-        #timer-container { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #dc3545; color: white; padding: 10px 20px; border-radius: 30px; font-size: 20px; font-weight: bold; z-index: 1000; }
-        .test-container { max-width: 850px; margin: 80px auto; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .question-card { padding: 20px; border-radius: 8px; margin-bottom: 25px; border: 1px solid #e1e4e8; border-left: 6px solid #007bff; }
-        .option-item { display: block; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background-color: #f4f7f6; 
+            color: #333; 
+            margin: 0; 
+            /* Prevent text selection */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        #timer-container { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: #dc3545; 
+            color: white; 
+            padding: 12px 25px; 
+            border-radius: 30px; 
+            font-size: 20px; 
+            font-weight: bold; 
+            z-index: 1000; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .test-container { 
+            max-width: 850px; 
+            margin: 100px auto; 
+            padding: 30px; 
+            background: white; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); 
+        }
+
+        .question-card { 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin-bottom: 25px; 
+            border: 1px solid #e1e4e8; 
+            border-left: 6px solid #007bff; 
+            background: #fff;
+        }
+
+        .option-item { 
+            display: block; 
+            padding: 12px; 
+            margin: 8px 0; 
+            border: 1px solid #ddd; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            transition: 0.2s; 
+        }
+
         .option-item:hover { background: #f0f7ff; border-color: #007bff; }
-        .submit-btn { background: #007bff; color: white; padding: 15px; border: none; border-radius: 8px; font-size: 18px; width: 100%; cursor: pointer; transition: background 0.3s; }
+        
+        .submit-btn { 
+            background: #007bff; 
+            color: white; 
+            padding: 15px; 
+            border: none; 
+            border-radius: 8px; 
+            font-size: 18px; 
+            width: 100%; 
+            cursor: pointer; 
+            transition: background 0.3s; 
+        }
+
         .submit-btn:hover { background: #0056b3; }
-        /* Style for disabled state */
         .submit-btn:disabled { background: #cccccc; cursor: not-allowed; }
     </style>
 </head>
-<body>
+<body oncopy="return false" oncut="return false" onpaste="return false">
 
     <div id="timer-container">Time Remaining: <span id="timer">15:00</span></div>
 
     <div class="test-container">
         <h2 style="text-align: center; color: #007bff;">Technical Assessment</h2>
-        <p style="text-align: center; font-style: italic;">Do not switch tabs. Assessment is monitored.</p>
+        <p style="text-align: center; font-style: italic; color: #dc3545;">
+            Warning: Do not switch tabs or access browser sidebars. Any loss of focus will result in immediate submission.
+        </p>
         <hr>
 
         <form action="{{ url_for('submit_test') }}" method="POST" id="assessment-form">
@@ -38,7 +100,6 @@
                     <label class="option-item">
                         <input type="radio" name="q{{ i }}" value="{{ j }}">
                         {{ questions[i].options[j] }}
-                        
                         <input type="hidden" name="q{{ i }}_opt_text_{{ j }}" value="{{ questions[i].options[j] }}">
                     </label>
                     {% endfor %}
@@ -51,37 +112,95 @@
     </div>
 
     <script>
+    // --- 7. History & Back Button Protection ---
+    // Force a reload if the user tries to navigate back to this page via history
+    window.onpageshow = function(event) {
+        if (event.persisted) {
+            window.location.reload();
+        }
+    };
+
     let timeLeft = 15 * 60;
-    let tabSwitchCount = 0;
     const testForm = document.getElementById('assessment-form');
     const submitBtn = document.getElementById('submit-button');
+    let isSubmitting = false;
+    let showingWarning = false; 
 
-    // Update 2: Form Submission Guard to prevent double clicks
-    testForm.addEventListener('submit', function() {
-        submitBtn.disabled = true;
-        submitBtn.innerText = "Submitting Results...";
-    });
-
+    // Timer logic
     function updateTimer() {
         const mins = Math.floor(timeLeft / 60);
         const secs = timeLeft % 60;
         document.getElementById('timer').innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
-        if (timeLeft <= 0) { testForm.submit(); }
+        if (timeLeft <= 0 && !isSubmitting) {
+            forceSubmit();
+        }
         timeLeft--;
     }
+    setInterval(updateTimer, 1000);
 
-    document.addEventListener("visibilitychange", () => {
-        if (document.hidden) {
-            tabSwitchCount++;
-            if (tabSwitchCount >= 3) { 
-                alert("Final Warning: Limit exceeded. Submitting test.");
-                testForm.submit(); 
-            }
-            else { alert(`Warning: No tab switching! (${tabSwitchCount}/3)`); }
+    // --- 2 & 3. Proctoring Logic (Tab Switch / Sidebar / Blur) ---
+    window.addEventListener("blur", () => {
+        // If the warning popup is NOT active, auto-submit on focus loss
+        if (!isSubmitting && !showingWarning) {
+            forceSubmit();
         }
     });
 
-    setInterval(updateTimer, 1000);
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden && !isSubmitting) {
+            forceSubmit();
+        }
+    });
+
+    function forceSubmit() {
+        if (isSubmitting) return;
+        isSubmitting = true;
+        testForm.submit();
+    }
+
+    // --- 4. Anti-Cheat: Disable Right-Click ---
+    document.addEventListener('contextmenu', event => event.preventDefault());
+
+    // --- 5. Remaining Questions Warning ---
+    testForm.addEventListener('submit', function(e) {
+        if (isSubmitting) return;
+
+        const totalQuestions = {{ questions|length }};
+        let answeredCount = 0;
+
+        for (let i = 0; i < totalQuestions; i++) {
+            const options = document.getElementsByName(`q${i}`);
+            let isAnswered = false;
+            for (let opt of options) {
+                if (opt.checked) {
+                    isAnswered = true;
+                    break;
+                }
+            }
+            if (isAnswered) answeredCount++;
+        }
+
+        if (answeredCount < totalQuestions) {
+            showingWarning = true; // Temporary flag to pause proctoring
+            const confirmMsg = `You have only answered ${answeredCount} out of ${totalQuestions} questions. Are you sure you want to submit?`;
+            const userConfirmed = confirm(confirmMsg);
+
+            if (!userConfirmed) {
+                e.preventDefault();
+                // 500ms delay to let the browser stabilize focus after popup closes
+                setTimeout(() => {
+                    showingWarning = false;
+                }, 500);
+                return;
+            }
+        }
+
+        // Proceed with final submission
+        showingWarning = false; 
+        isSubmitting = true;
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Submitting Results...";
+    });
     </script>
 </body>
 </html>
